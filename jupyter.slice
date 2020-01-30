@@ -1,0 +1,12 @@
+[Unit]
+Description=Jupyter Resource Container
+Before=slices.target
+
+[Slice]
+CPUAccounting=true
+MemoryAccounting=true
+MemoryMax=30G
+MemorySwapMax=30G
+
+[Install]
+WantedBy=multi-user.target

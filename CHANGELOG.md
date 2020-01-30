@@ -1,5 +1,19 @@
 # Changelog
 
+
+## v0.14
+
+### New Features
+ - Preliminary support for remote spawning.
+ - Support for named servers
+ - New string template variables:
+    - {NAME} -> server-name
+    - {NAME_HASH} ->  hash of the server-name.
+    - {USERNAME_HASH} -> hash of username
+ - Finer control over resource allocations
+ 
+## Fork from the jupyterhub/systemdspawner project
+
 ## v0.13
 
 ### Bug Fixes

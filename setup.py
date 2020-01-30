@@ -1,18 +1,18 @@
 from setuptools import setup
 
 setup(
-    name='jupyterhub-systemdspawner',
-    version='0.13',
-    description='JupyterHub Spawner using systemd for resource isolation',
-    long_description='See https://github.com/jupyterhub/systemdspawner for more info',
-    url='https://github.com/jupyterhub/systemdspawner',
-    author='Yuvi Panda',
-    author_email='yuvipanda@gmail.com',
+    name='csystemdspawner',
+    version='git',
+    description='JupyterHub Spawner using systemd for resource allocation, isolation, and remote spawning',
+    long_description='See https://github.com/possiblyMikeB/csystemdspawner for more info',
+    url='https://github.com/possibleMikeB/csystemdspawner',
+    author='Michael Blackmon',
+    author_email='miblackmon@davidson.edu',
     license='3 Clause BSD',
-    packages=['systemdspawner'],
+    packages=['csystemdspawner'],
     entry_points={
         'jupyterhub.spawners': [
-            'systemdspawner = systemdspawner:SystemdSpawner',
+            'csystemdspawner = csystemdspawner:CSystemdSpawner',
         ],
     },
     install_requires=[
