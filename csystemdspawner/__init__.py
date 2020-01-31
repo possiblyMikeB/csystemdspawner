@@ -1,3 +1,3 @@
-from systemdspawner.systemdspawner import SystemdSpawner
+from csystemdspawner.csystemdspawner import CSystemdSpawner
 
-__all__ = [SystemdSpawner]
+__all__ = [CSystemdSpawner]

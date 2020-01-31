@@ -12,8 +12,7 @@ async def start_transient_service(
     unit_name,
     cmd,
     args,
-    working_dir,
-    remote_host=None,
+    host=None,
     environment_variables=None,
     properties=None,
     uid=None,
@@ -29,8 +28,8 @@ async def start_transient_service(
         '--unit', unit_name,
     ]
 
-    if remote_host:
-        run_cmd += [ '-H', remote_host ]
+    if host:
+        run_cmd += [ '-H', host ]
 
     if properties:
         for key, value in properties.items():
@@ -56,17 +55,17 @@ async def start_transient_service(
     if slice is not None:
         run_cmd += ['--slice={}'.format(slice)]
 
-    #
-    # XXX: Removed to add support for remote systemd calls -- MSB
-    #
 
+    run_cmd += [ shlex.quote(c) for c in cmd ]
+    run_cmd += [ shlex.quote(a) for a in args ]
+
+    #
+    # XXX: Below removed to add support for remote systemd calls -- MSB
+    #
     
     # We unfortunately have to resort to doing cd with bash, since WorkingDirectory property
     # of systemd units can't be set for transient units via systemd-run until systemd v227.
-    # Centos 7 has systemd 219, and will probably never upgrade - so we need to support them.
-    run_cmd += cmd
-    run_cmd += args
-    
+    # Centos 7 has systemd 219, and will probably never upgrade - so we need to support them.    
     #run_cmd += [
     #    '/bin/bash',
     #    '-c',
@@ -82,13 +81,13 @@ async def start_transient_service(
     return await proc.wait()
 
 
-async def service_running(unit_name, remote_host=None):
+async def service_running(unit_name, host=None):
     """
     Return true if service with given name is running (active).
     """
     cmd = [ 'systemctl' ]
-    if remote_host:
-        cmd += ['-H', remote_host]
+    if host:
+        cmd += ['-H', host]
     cmd += ['is-active', unit_name]
     
     proc = await asyncio.create_subprocess_exec(
@@ -100,13 +99,13 @@ async def service_running(unit_name, remote_host=None):
     return ret == 0
 
 
-async def service_failed(unit_name, remote_host=None):
+async def service_failed(unit_name, host=None):
     """
     Return true if service with given name is in a failed state.
     """
     cmd = [ 'systemctl' ]
-    if remote_host:
-        cmd += ['-H', remote_host]
+    if host:
+        cmd += ['-H', host]
     cmd += ['is-failed', unit_name]
     
     proc = await asyncio.create_subprocess_exec(
@@ -118,15 +117,15 @@ async def service_failed(unit_name, remote_host=None):
     return ret == 0
 
 
-async def stop_service(unit_name, remote_host=None):
+async def stop_service(unit_name, host=None):
     """
     Stop service with given name.
 
     Throws CalledProcessError if stopping fails
     """
     cmd = [ 'systemctl' ]
-    if remote_host:
-        cmd += ['-H', remote_host]
+    if host:
+        cmd += ['-H', host]
     cmd += ['stop', unit_name]
     
     proc = await asyncio.create_subprocess_exec(
@@ -136,15 +135,15 @@ async def stop_service(unit_name, remote_host=None):
     await proc.wait()
 
 
-async def reset_service(unit_name, remote_host=None):
+async def reset_service(unit_name, host=None):
     """
     Reset service with given name.
 
     Throws CalledProcessError if resetting fails
     """
     cmd = [ 'systemctl' ]
-    if remote_host:
-        cmd += ['-H', remote_host]
+    if host:
+        cmd += ['-H', host]
     cmd += ['reset-failed', unit_name]
     
     proc = await asyncio.create_subprocess_exec(

@@ -6,19 +6,30 @@ import asyncio
 
 from socket import gethostbyname
 from hashlib import md5
-from systemdspawner import systemd
+from csystemdspawner import systemd
 
 from jupyterhub.spawner import Spawner
 from jupyterhub.utils import random_port
 
 
-class SystemdSpawner(Spawner):
-    remote_host = Unicode(
+class CSystemdSpawner(Spawner):
+    controller = Unicode(
+        None,
+        all_none=True,
+        help="""
+        string identifying the jupyterhub controller which 
+        initialed the spawn and can control the unit."""
+    ).tag(config=True)
+
+    host = Unicode(
         None,
         allow_none=True,
         help="""
-        Hostname or ip address of remote-machine to launch the notebook server 
-        unit on; requires ssh and configured authorized_keys"""
+        Hostname or ip address of machine tasked with launching the 
+        guest notebook server unit; 
+           NOTE: if the value is not None, then requires that ssh and
+        preconfigured authorized_keys are in place on the target machine.
+        """
     ).tag(config=True)
     
     user_workingdir = Unicode(
@@ -27,7 +38,7 @@ class SystemdSpawner(Spawner):
         help="""
         Path to start each notebook user on.
 
-        {USERNAME}, {USERID}, and {NAME_HASH} are expanded.
+        {USERNAME}, {USERID}, and ... are expanded.
 
         Defaults to the home directory of the user.
 
@@ -40,7 +51,7 @@ class SystemdSpawner(Spawner):
         help="""
         Template for unix username each user should be spawned as.
 
-        {USERNAME}, {USERID}, and {NAME_HASH} are expanded.
+        {USERNAME}, {USERID}, {HUB} and {*_HASH} are expanded.
 
         This user should already exist in the system.
 
@@ -63,7 +74,7 @@ class SystemdSpawner(Spawner):
     ).tag(config=True)
 
     unit_name_template = Unicode(
-        'jupyter-{USERNAME}-{NAME_HASH}',
+        'notebook-{USERID}-{NAME_HASH}',
         help="""
         Template to use to make the systemd service names.
 
@@ -157,30 +168,65 @@ class SystemdSpawner(Spawner):
         """
     ).tag(config=True)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # All traitlets configurables are configured by now
-        self.unit_name = self._expand_user_vars(self.unit_name_template)
-        if self.remote_host:
-            self.ip = gethostbyname(self.remote_host)
-        self.log.debug('user:%s Initialized spawner with unit %s', self.user.name, self.unit_name)
-
-    def _expand_user_vars(self, string):
+    # ##########################################################################
+    
+    def _expand_user_vars(self, obj):
         """
         Expand user related variables in a given string
 
         Currently expands:
-          {USERNAME} -> Name of the user
-          {USERID} -> UserID
-          {NAME_HASH} -> md5-hash of server name (when present)
-        """
-        fmtenv = dict( USERNAME=self.user.name, USERID=self.user.id )
-        
-        if self.name is not None:
-            fmtenv['NAME_HASH']=md5( self.name.encode('utf-8') ).hexdigest()
-            
-        return string.format(**fmtenv)
+          {NAME}          -> server name (when present)
+          {NAME_HASH}     -> hash of server name (when present)
+          {USERNAME}      -> name of user
+          {USERNAME_HASH} -> hashed name of user
 
+          {HUB}           -> string identifiying the hub controller  
+                               which initiated the spawn & controls the unit
+          {HUB_HASH}      -> hash of ...
+
+          {USERID}        -> UserID
+
+        """
+        fmtenv = dict(
+            USERNAME=self.user.name,
+            USERID=self.user.id,
+            HUB=self.controller
+        )
+        
+        if self.name:
+            fmtenv['NAME'] = self.name
+            if not hasattr(self, 'name_hash'):
+                self.name_hash = md5(
+                    self.name.encode('utf-8')
+                ).hexdigest()
+            fmtenv['NAME_HASH'] = self.name_hash
+
+        if self.controller:
+            fmtenv['HUB'] = self.controller
+            if not hasattr(self, 'controller_hash'):
+                self.controller_hash = md5(
+                    self.controller.encode('utf-8')
+                ).hexdigest()
+            fmtenv['HUB_HASH']=self.controller_hash
+            
+        if type(obj) is str:
+            return obj.format(**fmtenv)
+        elif type(obj) is list:
+            return [self._expand_user_vars(v) for v in obj]
+        else:
+            raise Exception('something is misconfigured')
+        
+    # ##########################################################################
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # All traitlets configurables are configured by now
+        self.unit_name = self._expand_user_vars(self.unit_name_template)
+        if self.host:
+            self.ip = gethostbyname(self.remote_host)
+        self.log.debug('user:%s Initialized spawner with unit %s', self.user.name, self.unit_name)
+        self.log.debug('host:%s controller:%s', repr(self.host), repr(self.controller))
+        
     def get_state(self):
         """
         Save state required to reconstruct spawner from scratch
@@ -193,9 +239,16 @@ class SystemdSpawner(Spawner):
         saved no state, so this helps with that too!
         """
         state = super().get_state()
+
         state['unit_name'] = self.unit_name
-        if self.remote_host:
-            state['remote_host'] = self.remote_host
+        
+        if self.host:
+            state['host'] = self.host
+            state['ip'] = self.ip
+            
+        if self.controller:
+            state['controller'] = self.controller
+        
         return state
 
     def load_state(self, state):
@@ -212,45 +265,54 @@ class SystemdSpawner(Spawner):
         if 'unit_name' in state:
             self.unit_name = state['unit_name']
 
-        if 'remote_host' in state:
-            self.remote_host = state['remote_host']
-
+        if 'host' in state:
+            self.host = state['host']
+            self.ip = state['ip'] # raises an exception if not found;
+                                  #   this is intentional        
+        if 'controller' in state:
+            self.controller = state['controller']
+        pass
+    
     async def start(self):
         self.port = random_port()
-        self.log.debug('user:%s Using port %s to start spawning user server', self.user.name, self.port)
-
+        self.log.debug('user:%s using port %s to start spawning user server', self.user.name, self.port)
+        self.log.debug('host:%s controller:%s', repr(self.host), repr(self.controller))
+        
         # If there's a unit with this name running already. This means a bug in
         # JupyterHub, a remnant from a previous install or a failed service start
         # from earlier. Regardless, we kill it and start ours in its place.
         # FIXME: Carefully look at this when doing a security sweep.
-        if await systemd.service_running(self.unit_name, remote_host=self.remote_host):
+        if await systemd.service_running(self.unit_name, self.host):
             self.log.info('user:%s Unit %s already exists but not known to JupyterHub. Killing', self.user.name, self.unit_name)
-            await systemd.stop_service(self.unit_name, remote_host=self.remote_host)
-            if await systemd.service_running(self.unit_name, remote_host=self.remote_host):
+            await systemd.stop_service(self.unit_name, self.host)
+            if await systemd.service_running(self.unit_name, self.host):
                 self.log.error('user:%s Could not stop already existing unit %s', self.user.name, self.unit_name)
                 raise Exception('Could not stop already existing unit {}'.format(self.unit_name))
 
         # If there's a unit with this name already but sitting in a failed state.
-        # Does a reset of the state before trying to start it up again.
-        if await systemd.service_failed(self.unit_name, remote_host=self.remote_host):
+        if await systemd.service_failed(self.unit_name, self.host):
+            # then do a reset of the state before trying to start it up again.
             self.log.info('user:%s Unit %s in a failed state. Resetting state.', self.user.name, self.unit_name)
-            await systemd.reset_service(self.unit_name, remote_host=self.remote_host)
+            await systemd.reset_service(self.unit_name, self.host)
 
+        # collect environment for unit
         env = self.get_env()
 
+        # begin translating Spawner interface into unit properties
         properties = {}
 
         if self.dynamic_users:
             #
-            # TODO: Figure out how to bind state with server-name
+            # TODO: Figure out how to combine state with server-name
             #
             properties['DynamicUser'] = 'yes'
-            properties['StateDirectory'] = self._expand_user_vars('{USERNAME}')
+            properties['StateDirectory'] = self._expand_user_vars('{USERNAME_HASH}')
 
             # HOME is not set by default otherwise
-            env['HOME'] = self._expand_user_vars('/var/lib/{USERNAME}')
+            env['HOME'] = self._expand_user_vars('/var/lib/{USERNAME_HASH}')
             # Set working directory to $HOME too
             working_dir = env['HOME']
+            
             # Set uid, gid = None so we don't set them
             uid = gid = None
         else:
@@ -262,15 +324,17 @@ class SystemdSpawner(Spawner):
                 raise
             uid = pwnam.pw_uid
             gid = pwnam.pw_gid
+            
             if self.user_workingdir is None:
                 working_dir = pwnam.pw_dir
             else:
                 working_dir = self._expand_user_vars(self.user_workingdir)
-
-            # XXX: having removed the temporary hack from `systemd.py`
-            #   this is now needed.
-            properties['WorkingDirectory'] = working_dir
             pass
+        
+        # XXX: having removed the temporary hack from `systemd.py`
+        #   this is now needed.
+        properties['WorkingDirectory'] = working_dir
+
         
         if self.isolate_tmp:
             properties['PrivateTmp'] = 'yes'
@@ -315,21 +379,25 @@ class SystemdSpawner(Spawner):
                 for path in self.readwrite_paths
             ]
 
-        properties.update(self.unit_extra_properties)
+        # XXX: added variable expansion to values associated with
+        #  the `unit_extra_properties` parameter
+        properties.update({ prop:  self._expand_user_vars(val) \
+                            for prop, val in self.unit_extra_properties })
 
-        await systemd.start_transient_service(
-            self.unit_name,
+
+        # assemble and record the paramters passed to systemd 
+        unit_spec=dict(
+            name=self.unit_name,
             cmd=[self._expand_user_vars(c) for c in self.cmd],
             args=[self._expand_user_vars(a) for a in self.get_args()],
-            working_dir=working_dir,
             environment_variables=env,
             properties=properties,
             uid=uid,
             gid=gid,
-            remote_host=self.remote_host,
-            slice=self.slice,
-        )
+            host=self.host,
+            slice=self.slice)
 
+        await systemd.start_transient_service(unit_spec.pop('name'), **unit_spec)
 
         for i in range(self.start_timeout):
             is_up = await self.poll()
@@ -340,10 +408,10 @@ class SystemdSpawner(Spawner):
         return None
 
     async def stop(self, now=False):
-        await systemd.stop_service(self.unit_name, remote_host=self.remote_host)
+        await systemd.stop_service(self.unit_name, self.host)
 
     async def poll(self):
-        if await systemd.service_running(self.unit_name, remote_host=self.remote_host):
+        if await systemd.service_running(self.unit_name, self.host):
             return None
         return 1
 
