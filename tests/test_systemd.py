@@ -4,7 +4,7 @@ Test systemd wrapper utilities.
 Must run as root.
 """
 import tempfile
-from systemdspawner import systemd
+from csystemdspawner import systemd
 import pytest
 import asyncio
 import os
@@ -82,26 +82,6 @@ async def test_env_setting():
             text = f.read()
             assert 'TESTING_SYSTEMD_ENV_1=TEST_1' in text
             assert 'TESTING_SYSTEMD_ENV_2=TEST_2' in text
-
-
-@pytest.mark.asyncio
-async def test_workdir():
-    unit_name = 'systemdspawner-unittest-' + str(time.time())
-    _, env_filename = tempfile.mkstemp()
-    with tempfile.TemporaryDirectory() as d:
-        await systemd.start_transient_service(
-            unit_name,
-            ['/bin/bash'],
-            ['-c', 'pwd > {}/pwd'.format(d)],
-            working_dir=d,
-        )
-
-        # Wait a tiny bit for the systemd unit to complete running
-        await asyncio.sleep(0.1)
- 
-        with open(os.path.join(d, 'pwd')) as f:
-            text = f.read().strip()
-            assert text == d
 
 
 @pytest.mark.asyncio
