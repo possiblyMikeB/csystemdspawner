@@ -13,8 +13,9 @@ from jupyterhub.utils import random_port
 
 
 class CSystemdSpawner(Spawner):
+    debug = True
     controller = Unicode(
-        None,
+        'default',
         all_none=True,
         help="""
         string identifying the jupyterhub controller which 
@@ -190,16 +191,18 @@ class CSystemdSpawner(Spawner):
         fmtenv = dict(
             USERNAME=self.user.name,
             USERID=self.user.id,
-            HUB=self.controller
-        )
-        
-        if self.name:
-            fmtenv['NAME'] = self.name
-            if not hasattr(self, 'name_hash'):
-                self.name_hash = md5(
-                    self.name.encode('utf-8')
+            HUB=self.controller,
+            USERNAME_HASH= md5(
+                    self.user.name.encode('utf-8')
                 ).hexdigest()
-            fmtenv['NAME_HASH'] = self.name_hash
+        )
+
+        fmtenv['NAME'] = self.name
+        if not hasattr(self, 'name_hash'):
+            self.name_hash = md5(
+                self.name.encode('utf-8')
+            ).hexdigest()
+        fmtenv['NAME_HASH'] = self.name_hash
 
         if self.controller:
             fmtenv['HUB'] = self.controller
@@ -212,7 +215,7 @@ class CSystemdSpawner(Spawner):
         if type(obj) is str:
             return obj.format(**fmtenv)
         elif type(obj) is list:
-            return [self._expand_user_vars(v) for v in obj]
+            return [self._expand_user_vars(v) for v in obj if type(v) is str]
         else:
             raise Exception('something is misconfigured')
         
@@ -220,12 +223,14 @@ class CSystemdSpawner(Spawner):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
         # All traitlets configurables are configured by now
         self.unit_name = self._expand_user_vars(self.unit_name_template)
         if self.host:
-            self.ip = gethostbyname(self.remote_host)
+            self.ip = gethostbyname(self.host)
         self.log.debug('user:%s Initialized spawner with unit %s', self.user.name, self.unit_name)
         self.log.debug('host:%s controller:%s', repr(self.host), repr(self.controller))
+        pass
         
     def get_state(self):
         """
@@ -240,8 +245,9 @@ class CSystemdSpawner(Spawner):
         """
         state = super().get_state()
 
+        self.log.debug(repr(list(state.keys())))
         state['unit_name'] = self.unit_name
-        
+
         if self.host:
             state['host'] = self.host
             state['ip'] = self.ip
@@ -271,7 +277,7 @@ class CSystemdSpawner(Spawner):
                                   #   this is intentional        
         if 'controller' in state:
             self.controller = state['controller']
-        pass
+        
     
     async def start(self):
         self.port = random_port()
@@ -382,7 +388,7 @@ class CSystemdSpawner(Spawner):
         # XXX: added variable expansion to values associated with
         #  the `unit_extra_properties` parameter
         properties.update({ prop:  self._expand_user_vars(val) \
-                            for prop, val in self.unit_extra_properties })
+                            for prop, val in self.unit_extra_properties.items() })
 
 
         # assemble and record the paramters passed to systemd 

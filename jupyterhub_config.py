@@ -22,7 +22,7 @@ c.JupyterHub.concurrent_spawn_limit = 100
 # named servers
 c.JupyterHub.allow_named_servers = True
 c.JupyterHub.named_server_limit_per_user = 1
-c.JupyterHub.default_server_name = ""
+c.JupyterHub.default_server_name = 'cat'
 
 # whether admins can access all notebook servers
 c.JupyterHub.admin_access = True
@@ -80,7 +80,7 @@ c.PAMAuthenticator.admin_groups = {'hub-admin'}
 c.PAMAuthenticator.service = 'jupyter-hub'
 
 ## Server Spawning  ############################################################
-
+c.CSystemdSpawner.name = ''
 c.CSystemdSpawner.controller = 'beta'
 c.CSystemdSpawner.host = '192.168.2.7'
 
@@ -97,7 +97,7 @@ c.CSystemdSpawner.environment = { 'PATH': '/opt/shared/bin:/bin:/bin:/usr/bin:/s
                                   'PYTHONUNBUFFERED': '1' }
 
 # user-service config
-c.CSystemdSpawner.user_workingdir    = '/tmp/{USERNAME}/{NAME}'
+c.CSystemdSpawner.user_workingdir    = '/tmp/'
 
 # main resource container/slice
 c.CSystemdSpawner.slice = 'jupyter'
@@ -113,7 +113,6 @@ c.CSystemdSpawner.isolate_devices   = False
 c.CSystemdSpawner.isolate_tmp       = True
 c.CSystemdSpawner.disable_user_sudo = True
 c.CSystemdSpawner.unit_extra_properties = {
-    'ExecStartPre'      : 'mkdir -p /tmp/{USERNAME_HASH}/{NAME_HASH}',
     'MemoryAccounting'  : 'true',
     'CPUAccounting'     : 'true',
     'MemoryMax'         : '1G',

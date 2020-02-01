@@ -77,7 +77,6 @@ async def start_transient_service(
     #]
 
     proc = await asyncio.create_subprocess_exec(*run_cmd)
-
     return await proc.wait()
 
 
